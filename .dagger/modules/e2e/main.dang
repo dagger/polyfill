@@ -1,0 +1,123 @@
+"""
+End-to-end checks for the polyfill module.
+
+Each check drives the installed `polyfill` dependency against a synthetic
+workspace built from a fixture tree under `.dagger/modules/e2e/fixtures`.
+"""
+type E2E {
+  let configNames: [String!]! = ["deno.json", "deno.jsonc"]
+
+  """
+  Fail the current check when a condition is false.
+  """
+  let assert(condition: Boolean!, message: String!): Void {
+    if (condition == false) {
+      raise message
+    }
+    null
+  }
+
+  """
+  Return true when a list contains the exact string.
+  """
+  let contains(values: [String!]!, want: String!): Boolean! {
+    values.filter { value => value == want }.length > 0
+  }
+
+  """
+  Fail unless a result holds exactly the wanted paths, in any order.
+  """
+  let assertPaths(got: [String!]!, want: [String!]!, context: String!): Void {
+    let rendered = context + ": got [" + got.join(", ") + "], want [" + want.join(", ") + "]"
+
+    assert(got.length == want.length, rendered)
+    want.each { path => assert(contains(got, path), rendered) }
+    null
+  }
+
+  """
+  Return a polyfill workspace over a fixture tree, entered at `cwd`.
+  """
+  let fixture(name: String!, cwd: String!): PolyfillWorkspace! {
+    polyfill().workspace(
+      currentModule.source.directory("fixtures/find-config-dirs/" + name).asWorkspace(cwd: cwd),
+    )
+  }
+
+  """
+  From the workspace root, discovery returns the root project and every project
+  beneath it. `dir` holds no config, so it is absent; find-up hits the root
+  itself, which the walk-down already covers, so it is not duplicated.
+  """
+  pub findConfigDirsRootCheck(): Void @check {
+    assertPaths(
+      fixture("basic", ".").findConfigDirs(configNames),
+      [".", "sub", "sub/dir/sub"],
+      "from the workspace root",
+    )
+    null
+  }
+
+  """
+  From a subdirectory that holds its own config, discovery is scoped to that
+  project and its descendants — the enclosing root project is shadowed by the
+  cwd's own config and must not come back.
+  """
+  pub findConfigDirsSubdirCheck(): Void @check {
+    assertPaths(
+      fixture("basic", "sub").findConfigDirs(configNames),
+      [".", "dir/sub"],
+      "from sub",
+    )
+    null
+  }
+
+  """
+  From a subdirectory with no config of its own and nothing beneath it, the only
+  hit is the enclosing project, reported as a ".."-relative path that resolves
+  back through the workspace.
+  """
+  pub findConfigDirsAncestorCheck(): Void @check {
+    let ws = fixture("basic", "dir")
+
+    assertPaths(ws.findConfigDirs(configNames), [".."], "from dir")
+    assert(
+      ws.core.directory("..").glob("deno.json").length == 1,
+      "the returned ancestor path did not resolve back to the root project",
+    )
+    null
+  }
+
+  """
+  `exclude` prunes the walk-down, so vendored trees do not surface as projects.
+  Without it the same tree yields the false positive.
+  """
+  pub findConfigDirsExcludeCheck(): Void @check {
+    let ws = fixture("exclude", ".")
+
+    assertPaths(
+      ws.findConfigDirs(configNames, exclude: ["**/node_modules/**"]),
+      [".", "pkg"],
+      "with node_modules excluded",
+    )
+    assertPaths(
+      ws.findConfigDirs(configNames),
+      [".", "node_modules/pkg", "pkg"],
+      "without an exclude",
+    )
+    null
+  }
+
+  """
+  Any of the given filenames marks a project, and a directory holding several of
+  them is reported once.
+  """
+  pub findConfigDirsMultiFilenameCheck(): Void @check {
+    assertPaths(
+      fixture("multi", ".").findConfigDirs(configNames),
+      [".", "both", "pkg"],
+      "with two config filenames",
+    )
+    null
+  }
+}

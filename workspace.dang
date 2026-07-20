@@ -43,6 +43,96 @@ type PolyfillWorkspace {
   }
 
   """
+  Find the directories holding any of the given config filenames (e.g.
+  ["deno.json", "deno.jsonc"], ["Dockerfile", "Containerfile"]), anchored at the
+  caller cwd rather than the workspace root — so a module run from a
+  subdirectory acts on the project you are in, and the projects beneath it.
+
+  Two searches, both returning cwd-relative paths:
+    - walk-down: every directory at or below the cwd holding a config file
+                 ("." , "sub/dir"), 0-N
+    - find-up:   the nearest enclosing project, when the cwd itself holds no
+                 config ("..", "../.."), 0 or 1
+
+  A ".." prefix is therefore the "outside my cone" marker for callers that only
+  want to act on the cwd and below.
+
+  `exclude` prunes the walk-down, e.g. ["**/node_modules/**"], since vendored
+  trees are full of false positives.
+
+  Polyfill for https://github.com/dagger/dagger/issues/13688, pending a core
+  Workspace method.
+  """
+  pub findConfigDirs(filenames: [String!]!, exclude: [String!]! = []): [String!]! {
+    (parentConfigDir(filenames) + descendantConfigDirs(filenames, exclude)).uniq
+  }
+
+  """
+  Return the nearest enclosing directory holding a config file, as a
+  ".."-relative path, or [] when there is none.
+
+  Workspace.findUp stops at the workspace root, so a farther-up project never
+  shadows a closer one. It counts the cwd itself as a hit; that case is dropped
+  here because the walk-down already covers the cwd and below, leaving only
+  strict ancestors.
+  """
+  let parentConfigDir(filenames: [String!]!): [String!]! {
+    let hit = filenames.reduce(null) { acc, name => acc ?? ws.findUp(name, ".") }
+
+    if (hit == null) {
+      []
+    } else {
+      let rel = dirOf(hit).trimPrefix("/")
+      let ancestor = if (rel == "") { "." } else { rel }
+      if (ancestor == cwd) { [] } else { [ancestorRelPath(ancestor)] }
+    }
+  }
+
+  """
+  Return a workspace-root-relative ancestor of the cwd as a ".."-relative path.
+
+  The ancestor is always a strict prefix of the cwd, so the number of ".."
+  segments is just the depth difference.
+  """
+  let ancestorRelPath(ancestor: String!): String! {
+    let depth = if (ancestor == ".") { 0 } else { ancestor.split("/").length }
+
+    cwd.split("/").dropFirst(depth).map { segment => ".." }.join("/")
+  }
+
+  """
+  Return every directory at or below the cwd holding a config file, as
+  cwd-relative paths.
+  """
+  let descendantConfigDirs(filenames: [String!]!, exclude: [String!]!): [String!]! {
+    let src = ws.directory(
+      ".",
+      include: filenames.map { name => "**/" + name },
+      exclude: exclude,
+    )
+
+    filenames
+      .reduce([]) { dirs, name => dirs + src.glob("**/" + name).map { cfg => dirOf(cfg) } }
+      .uniq
+  }
+
+  """
+  Return the directory holding a matched config file: "/a/b/x.json" -> "/a/b",
+  "x.json" -> ".", "/x.json" -> "/".
+  """
+  let dirOf(path: String!): String! {
+    let dir = path.split("/").dropLast(1).join("/")
+
+    if (dir != "") {
+      dir
+    } else if (path.hasPrefix("/")) {
+      "/"
+    } else {
+      "."
+    }
+  }
+
+  """
   Return a module source path resolved relative to the caller cwd.
   """
   let moduleSourcePath(path: String!): String! {
