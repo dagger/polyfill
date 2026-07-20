@@ -1,0 +1,374 @@
+"""
+Read and edit a workspace module's dagger.json.
+"""
+type PolyfillModuleConfig {
+  let ws: Workspace!
+  let cwd: String!
+  let path: String!
+  let originalContents: String!
+  let contents: String!
+
+  """
+  The Dagger module name declared in dagger.json.
+  """
+  pub name: String! {
+    configJSON.field(["name"]).asString
+  }
+
+  """
+  Return dependency names when present, otherwise dependency sources.
+  """
+  pub dependencies: [String!]! {
+    dependencyFragments
+      .map { dependency => dependencyName(dependency) }
+      .filter { dependency => dependency != "" }
+  }
+
+  """
+  The Dagger engine version required by this module, without a leading "v".
+  """
+  pub requiredEngineVersion: String! {
+    configJSON.field(["engineVersion"]).asString.trimPrefix("v")
+  }
+
+  """
+  Return this module config with one dependency appended.
+  """
+  pub withDependency(source: String!, name: String! = ""): PolyfillModuleConfig! {
+    let dependency = if (name == "") {
+      toString(toJSON(source))
+    } else {
+      toString(toJSON({{name: name, source: source}}))
+    }
+    withContents(withDependencyFragments(dependencyFragments + [dependency]))
+  }
+
+  """
+  Return this module config with dependencies matching the given name or source removed.
+  """
+  pub withoutDependency(name: String!): PolyfillModuleConfig! {
+    withContents(withDependencyFragments(
+      dependencyFragments.filter { dependency =>
+        dependencyName(dependency) != name and dependencySource(dependency) != name
+      },
+    ))
+  }
+
+  """
+  Return this module config after updating one dependency, or all remote dependencies.
+  """
+  pub withUpdatedDependencies(name: String! = ""): PolyfillModuleConfig! {
+    let updates = if (name == "") { [] } else { [name] }
+    let updatedRemote = updatedRemoteDependencyFragments(updates)
+
+    if (updatedRemote.length == 0) {
+      PolyfillModuleConfig(
+        ws: ws,
+        cwd: cwd,
+        path: path,
+        originalContents: originalContents,
+        contents: contents,
+      )
+    } else {
+      withContents(withDependencyFragments(localDependencyFragments + updatedRemote))
+    }
+  }
+
+  """
+  Return this module config with the given required Dagger engine version.
+  """
+  pub withRequiredEngineVersion(version: String!): PolyfillModuleConfig! {
+    withContents(withField(["engineVersion"], normalizedVersion(version)))
+  }
+
+  """
+  Return this module config with the current Dagger engine version.
+  """
+  pub withCurrentEngineVersion: PolyfillModuleConfig! {
+    withRequiredEngineVersion(version)
+  }
+
+  """
+  Return this module config with the latest stable Dagger engine version.
+  """
+  pub withLatestEngineVersion: PolyfillModuleConfig! {
+    withRequiredEngineVersion("latest")
+  }
+
+  """
+  Return a workspace fork containing this module config's staged dagger.json change.
+  """
+  pub fork: PolyfillWorkspaceFork! {
+    if (contents == originalContents) {
+      PolyfillWorkspaceFork(
+        ws: ws,
+        cwd: cwd,
+        before: directory,
+        after: directory,
+      )
+    } else {
+      let localPath = clientPath(configPath)
+      PolyfillWorkspaceFork(
+        ws: ws,
+        cwd: cwd,
+        before: directory.withNewFile(localPath, originalContents),
+        after: directory.withNewFile(localPath, contents),
+      )
+    }
+  }
+
+  """
+  Return this module config with updated dagger.json contents.
+  """
+  let withContents(updated: String!): PolyfillModuleConfig! {
+    PolyfillModuleConfig(
+      ws: ws,
+      cwd: cwd,
+      path: path,
+      originalContents: originalContents,
+      contents: updated,
+    )
+  }
+
+  """
+  Return this module's dagger.json path from the workspace root.
+  """
+  let configPath: String! {
+    if (path == ".") { "dagger.json" } else { path + "/dagger.json" }
+  }
+
+  let wsID: String! {
+    toJSON(ws.id)
+  }
+
+  """
+  Return a workspace-root path converted to caller-cwd coordinates.
+  """
+  let clientPath(path: String!): String! {
+    let workspacePath = cleanWorkspacePath(path)
+
+    if (cwd == ".") {
+      workspacePath
+    } else if (workspacePath == cwd) {
+      "."
+    } else {
+      let relative = workspacePath.trimPrefix(cwd + "/")
+      if (relative == workspacePath) {
+        raise "workspace path " + workspacePath + " is outside changeset root " + cwd
+      } else {
+        relative
+      }
+    }
+  }
+
+  """
+  Return a valid workspace-root-relative path.
+  """
+  let cleanWorkspacePath(path: String!): String! {
+    if (path == "" or path == ".") {
+      "."
+    } else if (path.trimPrefix("/") != path) {
+      raise "workspace path must be relative: " + path
+    } else if (path == ".."
+      or path.trimPrefix("../") != path
+      or path.contains("/../")
+      or path.trimSuffix("/..") != path) {
+      raise "workspace path escapes workspace: " + path
+    } else {
+      path.trimPrefix("./").trimSuffix("/")
+    }
+  }
+
+  """
+  Return each dependency entry as raw JSON text.
+  """
+  let dependencyFragments: [String!]! {
+    let config = configJSON
+    if (config.fields.contains("dependencies") == true) {
+      let dependencies = config.field(["dependencies"])
+      if (toString(dependencies.contents) == "null") {
+        []
+      } else {
+        dependencies
+          .asArray.{contents}
+          .map { dependency => toString(dependency.contents) }
+      }
+    } else {
+      []
+    }
+  }
+
+  """
+  Return local dependency entries exactly as they appeared in dagger.json.
+  """
+  let localDependencyFragments: [String!]! {
+    dependencyFragments.filter { dependency => isLocalDependency(dependency) }
+  }
+
+  """
+  Return the dependency's configured name, or its source if no name is set.
+  """
+  let dependencyName(dependency: String!): String! {
+    let value = json.withContents(dependency :: JSON!)
+    if (isJSONString(dependency)) {
+      value.asString
+    } else if (value.fields.contains("name") == true) {
+      value.field(["name"]).asString
+    } else if (value.fields.contains("source") == true) {
+      value.field(["source"]).asString
+    } else {
+      ""
+    }
+  }
+
+  """
+  Return the dependency source.
+  """
+  let dependencySource(dependency: String!): String! {
+    let value = json.withContents(dependency :: JSON!)
+    if (isJSONString(dependency)) {
+      value.asString
+    } else if (value.fields.contains("source") == true) {
+      value.field(["source"]).asString
+    } else {
+      ""
+    }
+  }
+
+  """
+  Return the dependency pin, if one is configured.
+  """
+  let dependencyPin(dependency: String!): String! {
+    let value = json.withContents(dependency :: JSON!)
+    if (isJSONString(dependency)) {
+      ""
+    } else if (value.fields.contains("pin") == true) {
+      value.field(["pin"]).asString
+    } else {
+      ""
+    }
+  }
+
+  """
+  Return true when a dependency source is a local path or bare local name.
+  """
+  let isLocalDependency(dependency: String!): Boolean! {
+    let source = dependencySource(dependency)
+    source != "" and dependencyPin(dependency) == "" and (
+      source.trimPrefix("/") != source
+        or source.trimPrefix(".") != source
+        or source.contains(".") == false
+    )
+  }
+
+  """
+  Return true when a JSON fragment is a string value.
+  """
+  let isJSONString(value: String!): Boolean! {
+    value.trimPrefix("\"") != value
+  }
+
+  """
+  Return dagger.json contents with the given dependency fragments as dependencies.
+  """
+  let withDependencyFragments(dependencies: [String!]!): String! {
+    let updated = configJSON.withField(
+      ["dependencies"],
+      json.withContents(("[" + dependencies.join(",") + "]") :: JSON!),
+    )
+    renderedConfig(updated)
+  }
+
+  """
+  Return dagger.json contents with a string field updated.
+  """
+  let withField(path: [String!]!, value: String!): String! {
+    renderedConfig(
+      configJSON.withField(
+        path,
+        json.withContents(toJSON(value) :: JSON!),
+      ),
+    )
+  }
+
+  """
+  Return rendered JSON as dagger.json contents.
+  """
+  let renderedConfig(value: JSONValue!): String! {
+    jsonContentsString(value) + "\n"
+  }
+
+  """
+  Return rendered JSON as plain file contents.
+  """
+  let jsonContentsString(value: JSONValue!): String! {
+    # JSONValue.contents is a JSON scalar. toString encodes it as a JSON string
+    # literal, so decode once before passing it to file APIs that need String.
+    json.withContents(toString(value.contents(pretty: true)) :: JSON!).asString
+  }
+
+  """
+  Return the current dagger.json contents as JSON.
+  """
+  let configJSON: JSONValue! {
+    json.withContents(contents :: JSON!)
+  }
+
+  """
+  Return a valid engine version string for dagger.json.
+  """
+  let normalizedVersion(version: String!): String! {
+    if (version == "") {
+      raise "version must not be empty"
+    } else if (version == "latest") {
+      version
+    } else if (version.trimPrefix("v") != version) {
+      version
+    } else {
+      "v" + version
+    }
+  }
+
+  """
+  Return updated remote dependencies from a core dependency update response.
+  """
+  let updatedRemoteDependencyFragments(updates: [String!]!): [String!]! {
+    PolyfillModuleConfigUpdate
+      .updatedRemoteDependencies(wsID, path, contents, updates)
+      .asJSON
+      .asArray.{contents}
+      .map { dependency => toString(dependency.contents) }
+  }
+}
+
+type PolyfillModuleConfigUpdate {
+  """
+  Return updated remote dependency fragments for a module config.
+  """
+  let updatedRemoteDependencies(
+    wsID: String!,
+    path: String!,
+    contents: String!,
+    updates: [String!]!,
+  ): File! {
+    container
+      .from("golang:1.26-alpine")
+      .withoutEntrypoint
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withDirectory(
+        "/helper",
+        currentModule.source.directory("helpers/module-config-update-dependencies"),
+      )
+      .withWorkdir("/helper")
+      .withExec(["go", "build", "-o", "/usr/local/bin/module-config-update-dependencies", "."])
+      .withEnvVariable("WORKSPACE_ID", wsID)
+      .withEnvVariable("MODULE_CONFIG_CONTENTS", contents)
+      .withEnvVariable("MODULE_CONFIG_UPDATES_JSON", toJSON(updates))
+      .withExec(
+        ["module-config-update-dependencies", "--path", path, "--out", "/dependencies.json"],
+        experimentalPrivilegedNesting: true,
+      )
+      .file("/dependencies.json")
+  }
+}

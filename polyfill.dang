@@ -1,0 +1,14 @@
+"""
+Polyfill for missing or broken engine calls used by SDK development.
+"""
+type Polyfill {
+  """
+  Project a core workspace to a polyfill workspace.
+  """
+  pub workspace(ws: Workspace!): PolyfillWorkspace! {
+    PolyfillWorkspace(
+      ws: ws,
+      cwd: PolyfillWorkspaceCwd().path(ws),
+    )
+  }
+}

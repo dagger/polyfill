@@ -1,0 +1,247 @@
+"""
+Helpers for staging workspace-rooted edits before returning a Changeset.
+
+This is a local helper for a future core concept. Callers pass paths relative to
+the workspace root. The helper converts them to the caller's workspace cwd only
+when producing a Changeset, because today's clients apply returned changesets
+relative to the caller cwd.
+"""
+type PolyfillWorkspaceFork {
+  let ws: Workspace!
+
+  """
+  Caller cwd relative to the workspace root.
+  """
+  let cwd: String!
+
+  let before: Directory!
+  let after: Directory!
+
+  """
+  Add or replace a file at a workspace-root-relative path.
+  """
+  pub withNewFile(path: String!, contents: String!): PolyfillWorkspaceFork! {
+    let workspacePath = cleanWorkspacePath(path)
+    let localPath = clientPath(workspacePath)
+
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: beforeWithExistingFile(workspacePath, localPath),
+      after: after.withNewFile(localPath, contents),
+    )
+  }
+
+  """
+  Add or replace a file at a workspace-root-relative path.
+  """
+  pub withFile(path: String!, source: File!): PolyfillWorkspaceFork! {
+    let workspacePath = cleanWorkspacePath(path)
+    let localPath = clientPath(workspacePath)
+
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: beforeWithExistingFile(workspacePath, localPath),
+      after: after.withFile(localPath, source),
+    )
+  }
+
+  """
+  Add or replace a directory at a workspace-root-relative path.
+  """
+  pub withDirectory(path: String!, source: Directory!): PolyfillWorkspaceFork! {
+    let workspacePath = cleanWorkspacePath(path)
+    let localPath = clientPath(workspacePath)
+
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: beforeWithExistingDirectory(workspacePath, localPath),
+      after: after.withDirectory(localPath, source),
+    )
+  }
+
+  """
+  Stage an already-computed directory diff at a workspace-root-relative path.
+  """
+  pub withDirectoryDiff(
+    path: String!,
+    beforeSource: Directory!,
+    afterSource: Directory!,
+  ): PolyfillWorkspaceFork! {
+    let workspacePath = cleanWorkspacePath(path)
+    let localPath = clientPath(workspacePath)
+
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: before.withDirectory(localPath, beforeSource),
+      after: after.withDirectory(localPath, afterSource),
+    )
+  }
+
+  """
+  Return a workspace-root path converted to caller-cwd coordinates.
+  """
+  let clientPath(path: String!): String! {
+    let workspacePath = cleanWorkspacePath(path)
+
+    if (cwd == ".") {
+      workspacePath
+    } else if (workspacePath == cwd) {
+      "."
+    } else {
+      let relative = workspacePath.trimPrefix(cwd + "/")
+      if (relative == workspacePath) {
+        raise "workspace path " + workspacePath + " is outside changeset root " + cwd
+      } else {
+        relative
+      }
+    }
+  }
+
+  """
+  Merge another fork staged for the same caller cwd.
+  """
+  pub merge(other: PolyfillWorkspaceFork!): PolyfillWorkspaceFork! {
+    if (other.cwd != cwd) {
+      raise "cannot merge workspace forks with different cwd"
+    }
+
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: before.withDirectory(".", other.before),
+      after: after.withDirectory(".", other.after),
+    )
+  }
+
+  """
+  Compute the filesystem changes staged in this fork.
+  """
+  pub changes: Changeset! {
+    after.changes(before)
+  }
+
+  """
+  Return the before directory with the current workspace file added if it exists.
+  """
+  let beforeWithExistingFile(workspacePath: String!, localPath: String!): Directory! {
+    before.withDirectory(
+      ".",
+      PolyfillWorkspaceSnapshot.existingFile(wsID, workspacePath, localPath),
+    )
+  }
+
+  """
+  Return the before directory with the current workspace directory added if it exists.
+  """
+  let beforeWithExistingDirectory(workspacePath: String!, localPath: String!): Directory! {
+    before.withDirectory(
+      ".",
+      PolyfillWorkspaceSnapshot.existingDirectory(wsID, workspacePath, localPath),
+    )
+  }
+
+  """
+  Return a valid workspace-root-relative path.
+  """
+  let cleanWorkspacePath(path: String!): String! {
+    if (path == "" or path == ".") {
+      "."
+    } else if (path.trimPrefix("/") != path) {
+      raise "workspace path must be relative: " + path
+    } else if (path == ".."
+      or path.trimPrefix("../") != path
+      or path.contains("/../")
+      or path.trimSuffix("/..") != path) {
+      raise "workspace path escapes workspace: " + path
+    } else {
+      path.trimPrefix("./").trimSuffix("/")
+    }
+  }
+
+  let wsID: String! {
+    toJSON(ws.id)
+  }
+}
+
+"""
+Read existing workspace paths.
+"""
+type PolyfillWorkspaceSnapshot {
+  """
+  Return a directory containing the existing workspace file, if it exists.
+  """
+  let existingFile(wsID: String!, workspacePath: String!, localPath: String!): Directory! {
+    existing("file", wsID, workspacePath, localPath)
+  }
+
+  """
+  Return a directory containing the existing workspace directory, if it exists.
+  """
+  let existingDirectory(
+    wsID: String!,
+    workspacePath: String!,
+    localPath: String!,
+  ): Directory! {
+    existing("directory", wsID, workspacePath, localPath)
+  }
+
+  """
+  Return a directory snapshot of one existing workspace path.
+  """
+  let existing(
+    kind: String!,
+    wsID: String!,
+    workspacePath: String!,
+    localPath: String!,
+  ): Directory! {
+    container
+      .from("golang:1.26-alpine")
+      .withoutEntrypoint
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withDirectory(
+        "/helper",
+        currentModule.source.directory("helpers/workspace-snapshot"),
+      )
+      .withWorkdir("/helper")
+      .withExec(["go", "build", "-o", "/usr/local/bin/workspace-snapshot", "."])
+      .withEnvVariable("WORKSPACE_ID", wsID)
+      .withExec(
+        [
+          "workspace-snapshot",
+          "--kind", kind,
+          "--path", workspacePath,
+          "--local-path", localPath,
+          "--out", "/out",
+        ],
+        experimentalPrivilegedNesting: true,
+      )
+      .directory("/out")
+  }
+}
+
+"""
+Return the caller cwd relative to the workspace root.
+"""
+type PolyfillWorkspaceCwd {
+  """
+  Return the current workspace directory path relative to the workspace root.
+  """
+  let path(ws: Workspace!): String! {
+    # Newer engines do not expose Workspace.path. Searching for "." from "."
+    # returns the current workspace directory as a workspace-root-relative path.
+    let path = ws.findUp(name: ".", from: ".")
+
+    if (path == null) {
+      "."
+    } else if (path == "/") {
+      "."
+    } else {
+      path.trimPrefix("/")
+    }
+  }
+}
