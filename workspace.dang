@@ -71,21 +71,51 @@ type PolyfillWorkspace {
   Return the nearest enclosing directory holding a config file, as a
   ".."-relative path, or [] when there is none.
 
-  Workspace.findUp stops at the workspace root, so a farther-up project never
-  shadows a closer one. It counts the cwd itself as a hit; that case is dropped
-  here because the walk-down already covers the cwd and below, leaving only
-  strict ancestors.
+  Every filename is searched and the deepest hit wins, so a farther-up project
+  never shadows a closer one just because its filename comes first. findUp
+  counts the cwd itself as a hit; that case is dropped here because the
+  walk-down already covers the cwd and below, leaving only strict ancestors.
   """
   let parentConfigDir(filenames: [String!]!): [String!]! {
-    let hit = filenames.reduce(null) { acc, name => acc ?? ws.findUp(name, ".") }
+    let hit = filenames.reduce(null) { acc, name =>
+      let found = ws.findUp(name, ".")
+      if (hitRank(found) > hitRank(acc)) { found } else { acc }
+    }
 
     if (hit == null) {
       []
     } else {
-      let rel = dirOf(hit).trimPrefix("/")
-      let ancestor = if (rel == "") { "." } else { rel }
+      let ancestor = configDirOf(hit)
       if (ancestor == cwd) { [] } else { [ancestorRelPath(ancestor)] }
     }
+  }
+
+  """
+  Rank a findUp hit so that the nearest one wins a comparison.
+
+  All hits lie on the cwd's own ancestor chain, so the deeper directory is the
+  nearer project. Rank 0 means "no hit", hence the offset: a hit at the
+  workspace root still has to outrank nothing.
+  """
+  let hitRank(hit: String): Int! {
+    if (hit == null) { 0 } else { depthOf(configDirOf(hit)) + 1 }
+  }
+
+  """
+  Return the workspace-root-relative directory holding a findUp hit, "." at the
+  workspace root.
+  """
+  let configDirOf(hit: String!): String! {
+    let rel = dirOf(hit).trimPrefix("/")
+
+    if (rel == "") { "." } else { rel }
+  }
+
+  """
+  Return the depth of a workspace-root-relative directory, 0 at the root.
+  """
+  let depthOf(dir: String!): Int! {
+    if (dir == ".") { 0 } else { dir.split("/").length }
   }
 
   """
@@ -95,9 +125,7 @@ type PolyfillWorkspace {
   segments is just the depth difference.
   """
   let ancestorRelPath(ancestor: String!): String! {
-    let depth = if (ancestor == ".") { 0 } else { ancestor.split("/").length }
-
-    cwd.split("/").dropFirst(depth).map { segment => ".." }.join("/")
+    cwd.split("/").dropFirst(depthOf(ancestor)).map { segment => ".." }.join("/")
   }
 
   """
