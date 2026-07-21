@@ -1,0 +1,95 @@
+"""
+Assertions shared by the e2e checks.
+"""
+type Asserts {
+  """
+  Fail the current check when a condition is false.
+  """
+  let assert(condition: Boolean!, message: String!): Void {
+    if (condition == false) {
+      raise message
+    }
+    null
+  }
+
+  """
+  Return true when a list contains the exact string.
+  """
+  let contains(values: [String!]!, want: String!): Boolean! {
+    values.filter { value => value == want }.length > 0
+  }
+
+  """
+  Fail unless a result holds exactly the wanted paths, in any order.
+  """
+  let paths(got: [String!]!, want: [String!]!, context: String!): Void {
+    let rendered = context + ": got [" + got.join(", ") + "], want [" + want.join(", ") + "]"
+
+    assert(got.length == want.length, rendered)
+    want.each { path => assert(contains(got, path), rendered) }
+    null
+  }
+
+  """
+  Assert that a changeset added a path.
+  """
+  let added(changes: Changeset!, path: String!): Void {
+    assert(contains(changes.addedPaths, path), "expected added path: " + path)
+  }
+
+  """
+  Assert that a changeset modified a path.
+  """
+  let modified(changes: Changeset!, path: String!): Void {
+    assert(contains(changes.modifiedPaths, path), "expected modified path: " + path)
+  }
+
+  """
+  Assert that a changeset removed a path.
+  """
+  let removed(changes: Changeset!, path: String!): Void {
+    assert(contains(changes.removedPaths, path), "expected removed path: " + path)
+  }
+
+  """
+  Assert that a string contains a substring.
+  """
+  let stringContains(value: String!, want: String!, message: String!): Void {
+    assert(value.contains(want), message)
+  }
+
+  """
+  Assert that a string does not contain a substring.
+  """
+  let stringNotContains(value: String!, want: String!, message: String!): Void {
+    assert(value.contains(want) == false, message)
+  }
+
+  """
+  Assert that a config edit modified only the given dagger.json.
+  """
+  let onlyModuleConfigChanged(changes: Changeset!, path: String!): Void {
+    modified(changes, path + "/dagger.json")
+    assert(changes.modifiedPaths.length == 1, "config edit modified more than dagger.json")
+    assert(changes.addedPaths.length == 0, "config edit added paths")
+    assert(changes.removedPaths.length == 0, "config edit removed paths")
+  }
+}
+
+"""
+Workspace-root-relative paths of the e2e fixture tree.
+
+The checks that exercise forks, module config, and generation read fixtures
+through this repo's own workspace, so they address them from the workspace root
+rather than through `currentModule.source`.
+"""
+type Fixtures {
+  let root: String! = ".dagger/modules/e2e/fixtures"
+  let out: String! = ".dagger/modules/e2e/out"
+
+  let configModule: String! = root + "/config/app"
+  let forkFile: String! = root + "/fork/existing.txt"
+  let forkDir: String! = root + "/fork/dir"
+  let generateModule: String! = root + "/generate/app"
+  let updateModule: String! = root + "/update/app"
+}

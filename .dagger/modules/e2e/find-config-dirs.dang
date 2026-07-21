@@ -1,0 +1,95 @@
+"""
+Checks for PolyfillWorkspace.findConfigDirs.
+
+Discovery is anchored at the caller cwd, so each check runs against a synthetic
+workspace built from a fixture tree and entered at a chosen cwd.
+"""
+type FindConfigDirsChecks {
+  let configNames: [String!]! = ["deno.json", "deno.jsonc"]
+
+  """
+  Return a polyfill workspace over a fixture tree, entered at `cwd`.
+  """
+  let fixture(name: String!, cwd: String!): PolyfillWorkspace! {
+    polyfill().workspace(
+      currentModule.source.directory("fixtures/find-config-dirs/" + name).asWorkspace(cwd: cwd),
+    )
+  }
+
+  """
+  From the workspace root, discovery returns the root project and every project
+  beneath it. `dir` holds no config, so it is absent; find-up hits the root
+  itself, which the walk-down already covers, so it is not duplicated.
+  """
+  pub rootCheck(): Void @check {
+    Asserts.paths(
+      fixture("basic", ".").findConfigDirs(configNames),
+      [".", "sub", "sub/dir/sub"],
+      "from the workspace root",
+    )
+    null
+  }
+
+  """
+  From a subdirectory that holds its own config, discovery is scoped to that
+  project and its descendants — the enclosing root project is shadowed by the
+  cwd's own config and must not come back.
+  """
+  pub subdirCheck(): Void @check {
+    Asserts.paths(
+      fixture("basic", "sub").findConfigDirs(configNames),
+      [".", "dir/sub"],
+      "from sub",
+    )
+    null
+  }
+
+  """
+  From a subdirectory with no config of its own and nothing beneath it, the only
+  hit is the enclosing project, reported as a ".."-relative path that resolves
+  back through the workspace.
+  """
+  pub ancestorCheck(): Void @check {
+    let ws = fixture("basic", "dir")
+
+    Asserts.paths(ws.findConfigDirs(configNames), [".."], "from dir")
+    Asserts.assert(
+      ws.core.directory("..").glob("deno.json").length == 1,
+      "the returned ancestor path did not resolve back to the root project",
+    )
+    null
+  }
+
+  """
+  `exclude` prunes the walk-down, so vendored trees do not surface as projects.
+  Without it the same tree yields the false positive.
+  """
+  pub excludeCheck(): Void @check {
+    let ws = fixture("exclude", ".")
+
+    Asserts.paths(
+      ws.findConfigDirs(configNames, exclude: ["**/node_modules/**"]),
+      [".", "pkg"],
+      "with node_modules excluded",
+    )
+    Asserts.paths(
+      ws.findConfigDirs(configNames),
+      [".", "node_modules/pkg", "pkg"],
+      "without an exclude",
+    )
+    null
+  }
+
+  """
+  Any of the given filenames marks a project, and a directory holding several of
+  them is reported once.
+  """
+  pub multiFilenameCheck(): Void @check {
+    Asserts.paths(
+      fixture("multi", ".").findConfigDirs(configNames),
+      [".", "both", "pkg"],
+      "with two config filenames",
+    )
+    null
+  }
+}

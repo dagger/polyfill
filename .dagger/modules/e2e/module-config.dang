@@ -1,0 +1,135 @@
+"""
+Checks for PolyfillModuleConfig reads and dagger.json edits.
+"""
+type ModuleConfigChecks {
+  let fixtures: Fixtures! = Fixtures()
+
+  """
+  Assert that a config edit modified only the config fixture's dagger.json.
+  """
+  let onlyConfigChanged(changes: Changeset!): Void {
+    Asserts.onlyModuleConfigChanged(changes, fixtures.configModule)
+  }
+
+  """
+  Return the config fixture's staged dagger.json contents.
+  """
+  let configContents(changes: Changeset!): String! {
+    changes.after.file(fixtures.configModule + "/dagger.json").contents
+  }
+
+  """
+  Module config helpers should list and edit dagger.json dependencies.
+  """
+  pub dependencyCheck(ws: Workspace!): Void @check {
+    let pws = polyfill().workspace(ws)
+    let deps = pws.moduleSource(fixtures.configModule).config.dependencies
+
+    Asserts.assert(Asserts.contains(deps, "../dep-string"), "string dependency source was not listed")
+    Asserts.assert(Asserts.contains(deps, "dep-named"), "named dependency was not listed")
+    Asserts.assert(Asserts.contains(deps, "../dep-source-only"), "source-only dependency was not listed")
+
+    let added = pws
+      .moduleSource(fixtures.configModule)
+      .config
+      .withDependency("../dep-new")
+      .fork
+      .changes
+    onlyConfigChanged(added)
+    Asserts.stringContains(configContents(added), "\"../dep-new\"", "unnamed dependency was not added")
+
+    let named = pws
+      .moduleSource(fixtures.configModule)
+      .config
+      .withDependency("../dep-new", name: "dep-alias")
+      .fork
+      .changes
+    onlyConfigChanged(named)
+    Asserts.stringContains(configContents(named), "\"name\": \"dep-alias\"", "named dependency was not added")
+    Asserts.stringContains(configContents(named), "\"source\": \"../dep-new\"", "named dependency source was not kept")
+
+    let removed = pws
+      .moduleSource(fixtures.configModule)
+      .config
+      .withoutDependency("dep-named")
+      .fork
+      .changes
+    onlyConfigChanged(removed)
+    Asserts.stringNotContains(configContents(removed), "\"name\": \"dep-named\"", "named dependency was not removed")
+
+    null
+  }
+
+  """
+  Updating local-only dependencies should return an empty config fork.
+  """
+  pub updateCheck(ws: Workspace!): Void @check {
+    let changes = polyfill().workspace(ws)
+      .moduleSource(fixtures.configModule)
+      .config
+      .withUpdatedDependencies
+      .fork
+      .changes
+
+    Asserts.assert(changes.isEmpty, "updating local-only dependencies should not edit dagger.json")
+
+    null
+  }
+
+  """
+  Updating remote dependencies should rewrite only the remote entries.
+  """
+  pub remoteUpdateCheck(ws: Workspace!): Void @check {
+    let changes = polyfill().workspace(ws)
+      .moduleSource(fixtures.updateModule)
+      .config
+      .withUpdatedDependencies("hello")
+      .fork
+      .changes
+
+    Asserts.onlyModuleConfigChanged(changes, fixtures.updateModule)
+    let updated = changes.after.file(fixtures.updateModule + "/dagger.json").contents
+    Asserts.stringContains(updated, "\"../dep-local\"", "local dependency was not preserved")
+    Asserts.stringContains(updated, "\"name\": \"hello\"", "remote dependency name was not preserved")
+    Asserts.stringContains(updated, "\"source\": \"github.com/shykes/daggerverse/hello@main\"", "remote dependency source was not normalized")
+    Asserts.stringContains(updated, "\"pin\": \"", "remote dependency was not pinned")
+
+    null
+  }
+
+  """
+  Module config engine helpers should read and normalize engine versions.
+  """
+  pub engineCheck(ws: Workspace!): Void @check {
+    let config = polyfill().workspace(ws).moduleSource(fixtures.configModule).config
+    let fixed = config.withRequiredEngineVersion("0.21.0").fork.changes
+    let latest = config.withLatestEngineVersion.fork.changes
+
+    Asserts.assert(config.requiredEngineVersion == "0.20.8", "required engine version should trim a leading v")
+    onlyConfigChanged(fixed)
+    Asserts.stringContains(configContents(fixed), "\"engineVersion\": \"v0.21.0\"", "fixed engine version was not normalized")
+    onlyConfigChanged(latest)
+    Asserts.stringContains(configContents(latest), "\"engineVersion\": \"latest\"", "latest engine version was not written")
+
+    null
+  }
+
+  """
+  Config forks should remain composable with extra workspace edits.
+  """
+  pub forkChainingCheck(ws: Workspace!): Void @check {
+    let changes = polyfill().workspace(ws)
+      .moduleSource(fixtures.configModule)
+      .config
+      .withRequiredEngineVersion("0.21.0")
+      .fork
+      .withNewFile(fixtures.forkFile, "chained\n" + cloud.traceURL)
+      .changes
+
+    Asserts.modified(changes, fixtures.configModule + "/dagger.json")
+    Asserts.modified(changes, fixtures.forkFile)
+    Asserts.assert(changes.addedPaths.length == 0, "chained config fork should not add existing files")
+
+    null
+  }
+}
