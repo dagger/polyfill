@@ -81,6 +81,36 @@ type FindConfigDirsChecks {
   }
 
   """
+  When two enclosing projects use different config filenames, find-up returns
+  the nearest one — the order of `filenames` must not decide which project a
+  caller lands in. Here the farther `nearest/deno.json` is searched before the
+  nearer `nearest/child/deno.jsonc`.
+  """
+  pub nearestMixedFilenameCheck(): Void @check {
+    let ws = fixture("nearest", "child/nested")
+
+    Asserts.paths(ws.findConfigDirs(configNames), [".."], "from child/nested")
+    Asserts.assert(
+      ws.core.directory("..").glob("deno.jsonc").length == 1,
+      "the returned ancestor path did not resolve back to the nearest project",
+    )
+    null
+  }
+
+  """
+  A config in the cwd shadows an enclosing one written with another filename:
+  the walk-down reports the cwd and find-up contributes nothing.
+  """
+  pub mixedFilenameShadowCheck(): Void @check {
+    Asserts.paths(
+      fixture("nearest", "child").findConfigDirs(configNames),
+      ["."],
+      "from child",
+    )
+    null
+  }
+
+  """
   Any of the given filenames marks a project, and a directory holding several of
   them is reported once.
   """

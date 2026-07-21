@@ -35,8 +35,9 @@ Two searches, both anchored at the client's CWD, never the workspace root:
 
 `ws.findUp` counts the CWD itself as a hit; that case is dropped because walk-down
 already covers it. So find-up only ever contributes a directory the caller lives
-*under*, and it stops at the first one — a farther-up project never shadows a
-closer one.
+*under*, and it is always the closest one: every filename is searched and the
+deepest hit wins, so a farther-up project never shadows a closer one written with
+a different filename.
 
 **Every path is CWD-relative**, so results read the way a shell user would write
 them and all resolve through `ws.directory(path)` unchanged. A `..` prefix is
@@ -76,8 +77,9 @@ sub/toto/a.txt
 Three private helpers on `PolyfillWorkspace`, lifted verbatim from the PRs plus
 `exclude`:
 
-- `parentConfigDir(filenames)` — `filenames.reduce(null) { acc, name => acc ?? ws.findUp(name, ".") }`,
-  `dirOf` it, drop if it equals the CWD, else convert to `..` form.
+- `parentConfigDir(filenames)` — `findUp` each filename, keep the deepest hit
+  (they all lie on the CWD's ancestor chain, so deepest = nearest), `dirOf` it,
+  drop if it equals the CWD, else convert to `..` form.
 - `descendantConfigDirs(filenames, exclude)` — `ws.directory(".", include: filenames.map { "**/" + it }, exclude: exclude)`,
   then `glob("**/" + name)` per filename, `dirOf` each, `uniq`.
 - `dirOf(path)` — `"/a/b/x.json" -> "/a/b"`, `"x.json" -> "."`, `"/x.json" -> "/"`.
@@ -112,5 +114,7 @@ mistaken for real modules.
 | `findConfigDirsAncestorCheck` | from `dir` → `[".."]`, and `ws.directory("..")` resolves to the root project |
 | `findConfigDirsExcludeCheck` | `exclude: ["**/node_modules/**"]` prunes the vendored hit; without it, it appears |
 | `findConfigDirsMultiFilenameCheck` | `["deno.json", "deno.jsonc"]` matches either and dedupes a dir holding both |
+| `nearestMixedFilenameCheck` | nested projects on different filenames → the nearer one wins, not the first filename's |
+| `mixedFilenameShadowCheck` | a CWD config shadows an ancestor written with another filename |
 
 No checks for other `PolyfillWorkspace` methods, per your scope.
