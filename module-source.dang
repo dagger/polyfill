@@ -76,16 +76,26 @@ type PolyfillModuleSource {
   Generate files for this module source, and return staged workspace changes.
   """
   pub generate: PolyfillWorkspaceFork! {
-    let fork = PolyfillWorkspace(ws: ws, cwd: cwd).fork
+    # Scope the generated context to this module's path (not the caller cwd) and
+    # stage it on an empty fork base, so the returned changeset contains only this
+    # module's files. This keeps changesets disjoint when several modules are
+    # generated and merged (e.g. `dagger generate` at the workspace root) instead
+    # of leaking each module's staged dependency codegen into the others' before
+    # snapshots, which otherwise cancels them out or conflicts on merge.
     let generated = PolyfillGeneration.workspaceModuleGeneratedContext(
       wsID,
       path,
       cwd: ".",
       local: true,
-      root: fork.cwd,
+      root: path,
     )
 
-    fork.withDirectoryDiff(fork.cwd, generated.before, generated.after)
+    PolyfillWorkspaceFork(
+      ws: ws,
+      cwd: cwd,
+      before: directory,
+      after: directory,
+    ).withDirectoryDiff(path, generated.before, generated.after)
   }
 
   """
