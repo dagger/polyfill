@@ -12,7 +12,6 @@ type ModuleSourceChecks {
       .workspace(ws)
       .moduleSource(fixtures.generateModule)
       .generate
-      .changes
 
     Asserts.added(changes, fixtures.generateModule + "/dagger.gen.go")
     Asserts.added(changes, fixtures.generateModule + "/go.mod")

@@ -35,20 +35,17 @@ type PolyfillModuleSource {
   Return this module source as a core ModuleSource.
   """
   core: ModuleSource! {
-    node(moduleSourceID).{{... on ModuleSource!}}
+    ws.moduleSource(workspaceRef)
   }
 
   """
-  Return a filtered workspace-rooted directory view containing the files required
-  to load this module source.
+  Return a workspace-rooted directory view containing this module source.
+
+  No longer filtered to the module's include set: a dir-kind module source
+  loads the full workspace overlay rootfs as its context.
   """
   workspaceView: Directory! {
-    PolyfillGeneration.workspaceModuleSourceView(
-      wsID,
-      path,
-      cwd: ".",
-      local: true,
-    )
+    core.contextDirectory
   }
 
   """
@@ -73,29 +70,13 @@ type PolyfillModuleSource {
   }
 
   """
-  Generate files for this module source, and return staged workspace changes.
-  """
-  generate: PolyfillWorkspaceFork! {
-    # Scope the generated context to this module's path (not the caller cwd) and
-    # stage it on an empty fork base, so the returned changeset contains only this
-    # module's files. This keeps changesets disjoint when several modules are
-    # generated and merged (e.g. `dagger generate` at the workspace root) instead
-    # of leaking each module's staged dependency codegen into the others' before
-    # snapshots, which otherwise cancels them out or conflicts on merge.
-    let generated = PolyfillGeneration.workspaceModuleGeneratedContext(
-      wsID,
-      path,
-      cwd: ".",
-      local: true,
-      root: path,
-    )
+  Generate files for this module source, and return the staged changes.
 
-    PolyfillWorkspaceFork(
-      ws: ws,
-      cwd: cwd,
-      before: directory,
-      after: directory,
-    ).withDirectoryDiff(path, generated.before, generated.after)
+  Paths are workspace-root-relative, matching how the module source is
+  addressed rather than where the caller happens to be standing.
+  """
+  generate: Changeset! {
+    core.generatedContextChangeset
   }
 
   """
@@ -109,124 +90,11 @@ type PolyfillModuleSource {
     JSON.encode(ws.id)
   }
 
-  let moduleSourceID: ID! {
-    PolyfillGeneration.workspaceModuleSourceID(
-      wsID,
-      path,
-      cwd: ".",
-      local: true,
-    ) :: ID!
+  """
+  Return this module source's path as a workspace-root-absolute ref, the form
+  Workspace.moduleSource resolves from the workspace root rather than the cwd.
+  """
+  let workspaceRef: String! {
+    if (path == ".") { "/" } else { "/" + path }
   }
-}
-
-type PolyfillGeneration {
-  """
-  Return generated context directories for an existing workspace module.
-
-  Temporary workaround: generated-context construction currently happens in a
-  nested Go helper because the SDK generation path still needs host workspace
-  snapshot behavior. Delete this helper once the engine exposes a direct API
-  usable from Dang.
-  """
-  let workspaceModuleGeneratedContext(
-    wsID: String!,
-    ref: String!,
-    cwd: String! = "",
-    local: Boolean! = false,
-    root: String! = ".",
-  ): PolyfillDirectoryDiff! {
-    let cwdFlags = if (cwd == "") { [] } else { ["--cwd", cwd] }
-    let localFlags = if (local) { ["--local"] } else { [] }
-
-    let output = container
-      .from("golang:1.26-alpine")
-      .withoutEntrypoint
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
-      .withDirectory(
-        "/helper",
-        currentModule.source.directory("helpers/workspace-module-generate"),
-      )
-      .withWorkdir("/helper")
-      .withExec(["go", "build", "-o", "/usr/local/bin/workspace-module-generate", "."])
-      .withEnvVariable("WORKSPACE_ID", wsID)
-      .withExec(
-        ["workspace-module-generate", "--root", root] + cwdFlags + localFlags + [ref],
-        experimentalPrivilegedNesting: true,
-      )
-
-    PolyfillDirectoryDiff(
-      before: output.directory("/before"),
-      after: output.directory("/after"),
-    )
-  }
-
-  """
-  Return the core ModuleSource ID for an existing workspace module.
-  """
-  let workspaceModuleSourceID(
-    wsID: String!,
-    ref: String!,
-    cwd: String! = "",
-    local: Boolean! = false,
-  ): String! {
-    let cwdFlags = if (cwd == "") { [] } else { ["--cwd", cwd] }
-    let localFlags = if (local) { ["--local"] } else { [] }
-
-    container
-      .from("golang:1.26-alpine")
-      .withoutEntrypoint
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
-      .withDirectory(
-        "/helper",
-        currentModule.source.directory("helpers/workspace-module-generate"),
-      )
-      .withWorkdir("/helper")
-      .withExec(["go", "build", "-o", "/usr/local/bin/workspace-module-generate", "."])
-      .withEnvVariable("WORKSPACE_ID", wsID)
-      .withExec(
-        ["workspace-module-generate", "--id-out", "/module-source.id"] + cwdFlags + localFlags + [ref],
-        experimentalPrivilegedNesting: true,
-      )
-      .file("/module-source.id")
-      .contents
-  }
-
-  """
-  Return the filtered workspace-rooted directory needed to load an existing
-  workspace module source.
-  """
-  let workspaceModuleSourceView(
-    wsID: String!,
-    ref: String!,
-    cwd: String! = "",
-    local: Boolean! = false,
-  ): Directory! {
-    let cwdFlags = if (cwd == "") { [] } else { ["--cwd", cwd] }
-    let localFlags = if (local) { ["--local"] } else { [] }
-
-    container
-      .from("golang:1.26-alpine")
-      .withoutEntrypoint
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
-      .withDirectory(
-        "/helper",
-        currentModule.source.directory("helpers/workspace-module-generate"),
-      )
-      .withWorkdir("/helper")
-      .withExec(["go", "build", "-o", "/usr/local/bin/workspace-module-generate", "."])
-      .withEnvVariable("WORKSPACE_ID", wsID)
-      .withExec(
-        ["workspace-module-generate", "--view-out", "/workspace-view"] + cwdFlags + localFlags + [ref],
-        experimentalPrivilegedNesting: true,
-      )
-      .directory("/workspace-view")
-  }
-}
-
-type PolyfillDirectoryDiff {
-  let before: Directory!
-  let after: Directory!
 }
