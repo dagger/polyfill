@@ -2,13 +2,13 @@
 Checks for PolyfillWorkspace projection and PolyfillWorkspaceFork edits.
 """
 type WorkspaceChecks {
-  let fixtures: Fixtures! = Fixtures()
+  let fixtures: Fixtures! = Fixtures
 
   """
   Explicit workspace projections should load the module config.
   """
-  pub projectionCheck(ws: Workspace!): Void @check {
-    let explicit = polyfill().workspace(ws).moduleSource(fixtures.configModule).config.requiredEngineVersion
+  projectionCheck(ws: Workspace!): Void @check {
+    let explicit = polyfill.workspace(ws).moduleSource(fixtures.configModule).config.requiredEngineVersion
 
     Asserts.assert(explicit == "0.20.8", "explicit workspace projection read the wrong engine version")
 
@@ -18,9 +18,9 @@ type WorkspaceChecks {
   """
   Workspace forks should classify new, existing file, and existing directory edits.
   """
-  pub forkEditCheck(ws: Workspace!): Void @check {
+  forkEditCheck(ws: Workspace!): Void @check {
     let salt = cloud.traceURL
-    let pws = polyfill().workspace(ws)
+    let pws = polyfill.workspace(ws)
     let addedPath = fixtures.out + "/fork/new.txt"
     let added = pws
       .fork
@@ -38,7 +38,11 @@ type WorkspaceChecks {
 
     Asserts.modified(replaced, fixtures.forkFile)
     Asserts.assert(replaced.addedPaths.length == 0, "existing file edit should not add paths")
-    Asserts.stringContains(replaced.layer.file(fixtures.forkFile).contents, "replaced", "existing file edit wrote the wrong contents")
+    Asserts.stringContains(
+      replaced.layer.file(fixtures.forkFile).contents,
+      "replaced",
+      "existing file edit wrote the wrong contents",
+    )
 
     let replacementFile = directory
       .withNewFile("replacement.txt", "file\n" + salt)
@@ -50,7 +54,11 @@ type WorkspaceChecks {
 
     Asserts.modified(replacedFile, fixtures.forkFile)
     Asserts.assert(replacedFile.addedPaths.length == 0, "existing file source edit should not add paths")
-    Asserts.stringContains(replacedFile.layer.file(fixtures.forkFile).contents, "file", "existing file source edit wrote the wrong contents")
+    Asserts.stringContains(
+      replacedFile.layer.file(fixtures.forkFile).contents,
+      "file",
+      "existing file source edit wrote the wrong contents",
+    )
 
     let replacementDir = directory
       .withNewFile("old.txt", "updated\n" + salt)
@@ -77,7 +85,9 @@ type WorkspaceChecks {
     let merged = pws
       .fork
       .withNewFile(fixtures.out + "/fork/one.txt", "one\n" + salt)
-      .merge(pws.fork.withNewFile(fixtures.out + "/fork/two.txt", "two\n" + salt))
+      .merge(
+        pws.fork.withNewFile(fixtures.out + "/fork/two.txt", "two\n" + salt),
+      )
       .changes
 
     Asserts.added(merged, fixtures.out + "/fork/one.txt")

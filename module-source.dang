@@ -9,7 +9,7 @@ type PolyfillModuleSource {
   """
   Read and edit this module source's dagger.json.
   """
-  pub config: PolyfillModuleConfig! {
+  config: PolyfillModuleConfig! {
     let configContents = PolyfillWorkspaceSnapshot.existingFile(
       wsID,
       configPath,
@@ -27,22 +27,22 @@ type PolyfillModuleSource {
   """
   Return true when this module source has a dagger.json.
   """
-  pub configExists: Boolean! {
+  configExists: Boolean! {
     ws.directory("/", include: [configPath]).exists(configPath)
   }
 
   """
   Return this module source as a core ModuleSource.
   """
-  pub core: ModuleSource! {
-    node(moduleSourceID).{... on ModuleSource!}
+  core: ModuleSource! {
+    node(moduleSourceID).{{... on ModuleSource!}}
   }
 
   """
   Return a filtered workspace-rooted directory view containing the files required
   to load this module source.
   """
-  pub workspaceView: Directory! {
+  workspaceView: Directory! {
     PolyfillGeneration.workspaceModuleSourceView(
       wsID,
       path,
@@ -54,28 +54,28 @@ type PolyfillModuleSource {
   """
   Return the module source root path inside the workspace view.
   """
-  pub sourceRootPath: String! {
+  sourceRootPath: String! {
     path
   }
 
   """
   Load this module source as a core Module.
   """
-  pub module: Module! {
+  module: Module! {
     core.asModule
   }
 
   """
   Return this module source's introspection schema file.
   """
-  pub introspectionSchemaJSON: File! {
+  introspectionSchemaJSON: File! {
     module.introspectionSchemaJSON
   }
 
   """
   Generate files for this module source, and return staged workspace changes.
   """
-  pub generate: PolyfillWorkspaceFork! {
+  generate: PolyfillWorkspaceFork! {
     # Scope the generated context to this module's path (not the caller cwd) and
     # stage it on an empty fork base, so the returned changeset contains only this
     # module's files. This keeps changesets disjoint when several modules are
@@ -106,7 +106,7 @@ type PolyfillModuleSource {
   }
 
   let wsID: String! {
-    toJSON(ws.id)
+    JSON.encode(ws.id)
   }
 
   let moduleSourceID: ID! {

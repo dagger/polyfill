@@ -20,7 +20,7 @@ type PolyfillWorkspaceFork {
   """
   Add or replace a file at a workspace-root-relative path.
   """
-  pub withNewFile(path: String!, contents: String!): PolyfillWorkspaceFork! {
+  withNewFile(path: String!, contents: String!): PolyfillWorkspaceFork! {
     let workspacePath = cleanWorkspacePath(path)
     let localPath = clientPath(workspacePath)
 
@@ -35,7 +35,7 @@ type PolyfillWorkspaceFork {
   """
   Add or replace a file at a workspace-root-relative path.
   """
-  pub withFile(path: String!, source: File!): PolyfillWorkspaceFork! {
+  withFile(path: String!, source: File!): PolyfillWorkspaceFork! {
     let workspacePath = cleanWorkspacePath(path)
     let localPath = clientPath(workspacePath)
 
@@ -50,7 +50,7 @@ type PolyfillWorkspaceFork {
   """
   Add or replace a directory at a workspace-root-relative path.
   """
-  pub withDirectory(path: String!, source: Directory!): PolyfillWorkspaceFork! {
+  withDirectory(path: String!, source: Directory!): PolyfillWorkspaceFork! {
     let workspacePath = cleanWorkspacePath(path)
     let localPath = clientPath(workspacePath)
 
@@ -65,7 +65,7 @@ type PolyfillWorkspaceFork {
   """
   Stage an already-computed directory diff at a workspace-root-relative path.
   """
-  pub withDirectoryDiff(
+  withDirectoryDiff(
     path: String!,
     beforeSource: Directory!,
     afterSource: Directory!,
@@ -104,7 +104,7 @@ type PolyfillWorkspaceFork {
   """
   Merge another fork staged for the same caller cwd.
   """
-  pub merge(other: PolyfillWorkspaceFork!): PolyfillWorkspaceFork! {
+  merge(other: PolyfillWorkspaceFork!): PolyfillWorkspaceFork! {
     if (other.cwd != cwd) {
       raise "cannot merge workspace forks with different cwd"
     }
@@ -120,7 +120,7 @@ type PolyfillWorkspaceFork {
   """
   Compute the filesystem changes staged in this fork.
   """
-  pub changes: Changeset! {
+  changes: Changeset! {
     after.changes(before)
   }
 
@@ -163,7 +163,7 @@ type PolyfillWorkspaceFork {
   }
 
   let wsID: String! {
-    toJSON(ws.id)
+    JSON.encode(ws.id)
   }
 }
 

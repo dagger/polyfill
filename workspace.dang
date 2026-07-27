@@ -8,14 +8,14 @@ type PolyfillWorkspace {
   """
   Return the underlying core Workspace.
   """
-  pub core: Workspace! {
+  core: Workspace! {
     ws
   }
 
   """
   Return a fork of the workspace state, to stage changes without side effects.
   """
-  pub fork: PolyfillWorkspaceFork! {
+  fork: PolyfillWorkspaceFork! {
     PolyfillWorkspaceFork(
       ws: ws,
       cwd: cwd,
@@ -27,14 +27,14 @@ type PolyfillWorkspace {
   """
   Return a directory view of this workspace.
   """
-  pub directory(path: String! = "/", include: [String!]! = ["**"]): Directory! {
+  directory(path: String! = "/", include: [String!]! = ["**"]): Directory! {
     ws.directory(path, include: include)
   }
 
   """
   Load a module source at the given path in the workspace.
   """
-  pub moduleSource(path: String!): PolyfillModuleSource! {
+  moduleSource(path: String!): PolyfillModuleSource! {
     PolyfillModuleSource(
       ws: ws,
       cwd: cwd,
@@ -63,7 +63,7 @@ type PolyfillWorkspace {
   Polyfill for https://github.com/dagger/dagger/issues/13688, pending a core
   Workspace method.
   """
-  pub findConfigDirs(filenames: [String!]!, exclude: [String!]! = []): [String!]! {
+  findConfigDirs(filenames: [String!]!, exclude: [String!]! = []): [String!]! {
     (parentConfigDir(filenames) + descendantConfigDirs(filenames, exclude)).uniq
   }
 
@@ -180,12 +180,10 @@ type PolyfillWorkspace {
   let cleanWorkspacePath(path: String!): String! {
     if (path == "" or path == ".") {
       "."
-    } else if (
-      path == ".."
-        or path.trimPrefix("../") != path
-        or path.contains("/../")
-        or path.trimSuffix("/..") != path
-    ) {
+    } else if (path == ".."
+      or path.trimPrefix("../") != path
+      or path.contains("/../")
+      or path.trimSuffix("/..") != path) {
       raise "path escapes workspace: " + path
     } else {
       path.trimPrefix("./").trimSuffix("/")

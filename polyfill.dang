@@ -5,10 +5,10 @@ type Polyfill {
   """
   Project a core workspace to a polyfill workspace.
   """
-  pub workspace(ws: Workspace!): PolyfillWorkspace! {
+  workspace(ws: Workspace!): PolyfillWorkspace! {
     PolyfillWorkspace(
       ws: ws,
-      cwd: PolyfillWorkspaceCwd().path(ws),
+      cwd: PolyfillWorkspaceCwd.path(ws),
     )
   }
 }

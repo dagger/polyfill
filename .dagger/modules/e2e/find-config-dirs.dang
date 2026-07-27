@@ -11,7 +11,7 @@ type FindConfigDirsChecks {
   Return a polyfill workspace over a fixture tree, entered at `cwd`.
   """
   let fixture(name: String!, cwd: String!): PolyfillWorkspace! {
-    polyfill().workspace(
+    polyfill.workspace(
       currentModule.source.directory("fixtures/find-config-dirs/" + name).asWorkspace(cwd: cwd),
     )
   }
@@ -21,7 +21,7 @@ type FindConfigDirsChecks {
   beneath it. `dir` holds no config, so it is absent; find-up hits the root
   itself, which the walk-down already covers, so it is not duplicated.
   """
-  pub rootCheck(): Void @check {
+  rootCheck: Void @check {
     Asserts.paths(
       fixture("basic", ".").findConfigDirs(configNames),
       [".", "sub", "sub/dir/sub"],
@@ -35,7 +35,7 @@ type FindConfigDirsChecks {
   project and its descendants — the enclosing root project is shadowed by the
   cwd's own config and must not come back.
   """
-  pub subdirCheck(): Void @check {
+  subdirCheck: Void @check {
     Asserts.paths(
       fixture("basic", "sub").findConfigDirs(configNames),
       [".", "dir/sub"],
@@ -49,7 +49,7 @@ type FindConfigDirsChecks {
   hit is the enclosing project, reported as a ".."-relative path that resolves
   back through the workspace.
   """
-  pub ancestorCheck(): Void @check {
+  ancestorCheck: Void @check {
     let ws = fixture("basic", "dir")
 
     Asserts.paths(ws.findConfigDirs(configNames), [".."], "from dir")
@@ -64,7 +64,7 @@ type FindConfigDirsChecks {
   `exclude` prunes the walk-down, so vendored trees do not surface as projects.
   Without it the same tree yields the false positive.
   """
-  pub excludeCheck(): Void @check {
+  excludeCheck: Void @check {
     let ws = fixture("exclude", ".")
 
     Asserts.paths(
@@ -86,7 +86,7 @@ type FindConfigDirsChecks {
   caller lands in. Here the farther `nearest/deno.json` is searched before the
   nearer `nearest/child/deno.jsonc`.
   """
-  pub nearestMixedFilenameCheck(): Void @check {
+  nearestMixedFilenameCheck: Void @check {
     let ws = fixture("nearest", "child/nested")
 
     Asserts.paths(ws.findConfigDirs(configNames), [".."], "from child/nested")
@@ -101,7 +101,7 @@ type FindConfigDirsChecks {
   A config in the cwd shadows an enclosing one written with another filename:
   the walk-down reports the cwd and find-up contributes nothing.
   """
-  pub mixedFilenameShadowCheck(): Void @check {
+  mixedFilenameShadowCheck: Void @check {
     Asserts.paths(
       fixture("nearest", "child").findConfigDirs(configNames),
       ["."],
@@ -114,7 +114,7 @@ type FindConfigDirsChecks {
   Any of the given filenames marks a project, and a directory holding several of
   them is reported once.
   """
-  pub multiFilenameCheck(): Void @check {
+  multiFilenameCheck: Void @check {
     Asserts.paths(
       fixture("multi", ".").findConfigDirs(configNames),
       [".", "both", "pkg"],

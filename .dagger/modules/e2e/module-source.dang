@@ -2,13 +2,14 @@
 Checks for PolyfillModuleSource generation.
 """
 type ModuleSourceChecks {
-  let fixtures: Fixtures! = Fixtures()
+  let fixtures: Fixtures! = Fixtures
 
   """
   Module source generation should return generated context changes.
   """
-  pub generateCheck(ws: Workspace!): Void @check {
-    let changes = polyfill().workspace(ws)
+  generateCheck(ws: Workspace!): Void @check {
+    let changes = polyfill
+      .workspace(ws)
       .moduleSource(fixtures.generateModule)
       .generate
       .changes
