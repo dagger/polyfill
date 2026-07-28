@@ -76,7 +76,17 @@ type PolyfillModuleSource {
   addressed rather than where the caller happens to be standing.
   """
   generate: Changeset! {
-    core.generatedContextChangeset
+    let generated = core.generatedContextChangeset
+
+    # The engine roots the generated context at the workspace, but a returned
+    # changeset is applied relative to the caller cwd, so the two have to be
+    # reconciled or every path ends up nested under the cwd a second time.
+    # Selecting a subdirectory is metadata only, so this costs nothing.
+    if (cwd == ".") {
+      generated
+    } else {
+      generated.after.directory(cwd).changes(generated.before.directory(cwd))
+    }
   }
 
   """

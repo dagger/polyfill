@@ -23,4 +23,24 @@ type ModuleSourceChecks {
 
     null
   }
+
+  """
+  Generation from a subdirectory should stage paths relative to that cwd.
+
+  A returned changeset is applied relative to the caller cwd, so a changeset
+  still carrying workspace-root paths lands nested under the cwd a second
+  time.
+  """
+  generateFromSubdirCheck: Void @check {
+    let ws = currentModule.source
+      .directory("fixtures/generate")
+      .asWorkspace(cwd: "app")
+
+    let changes = polyfill.workspace(ws).moduleSource("/app").generate
+
+    Asserts.added(changes, "dagger.gen.go")
+    Asserts.added(changes, "go.mod")
+
+    null
+  }
 }
