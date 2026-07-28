@@ -25,6 +25,24 @@ type ModuleSourceChecks {
   }
 
   """
+  The workspace view should be workspace-rooted, with sourceRootPath
+  addressing the module inside it.
+
+  This pair is consumed together outside this repo — e.g. sdk-sdk's mod-test
+  mounts the view and runs the module at its source root path within it.
+  """
+  workspaceViewCheck(ws: Workspace!): Void @check {
+    let module = polyfill.workspace(ws).moduleSource(fixtures.generateModule)
+
+    Asserts.assert(
+      module.workspaceView.exists(module.sourceRootPath + "/dagger.json"),
+      "workspace view does not contain the module config at sourceRootPath",
+    )
+
+    null
+  }
+
+  """
   Generation from a subdirectory should stage paths relative to that cwd.
 
   A returned changeset is applied relative to the caller cwd, so a changeset
