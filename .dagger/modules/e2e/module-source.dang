@@ -36,10 +36,63 @@ type ModuleSourceChecks {
       .directory("fixtures/generate")
       .asWorkspace(cwd: "app")
 
-    let changes = polyfill.workspace(ws).moduleSource("/app").generate
+    # Address the module the way a caller standing in it does: a cwd-relative
+    # ref, exercising the cwd-joining branch of moduleSourcePath.
+    let changes = polyfill.workspace(ws).moduleSource(".").generate
 
     Asserts.added(changes, "dagger.gen.go")
     Asserts.added(changes, "go.mod")
+
+    # The doubled-path bug nested every path under the cwd a second time, so
+    # its signature is paths carrying the workspace-root prefix.
+    Asserts.noneWithin(changes, "app", "changeset carries workspace-root paths")
+
+    null
+  }
+
+  """
+  Sibling modules sharing a local dependency should produce disjoint
+  changesets that merge into their exact union.
+
+  A dependency's generated files leaking into a dependent's changeset either
+  conflicts on merge or cancels the dependency's own changes out of the
+  merged result.
+  """
+  generateMergeCheck: Void @check {
+    let ws = currentModule.source
+      .directory("fixtures/generate-merge")
+      .asWorkspace
+
+    let pws = polyfill.workspace(ws)
+    let aChanges = pws.moduleSource("/a").generate
+    let bChanges = pws.moduleSource("/b").generate
+    let depChanges = pws.moduleSource("/dep").generate
+
+    Asserts.allWithin(aChanges, "a", "sibling a")
+    Asserts.allWithin(bChanges, "b", "sibling b")
+    Asserts.allWithin(depChanges, "dep", "shared dep")
+
+    Asserts.added(aChanges, "a/dagger.gen.go")
+    Asserts.added(bChanges, "b/dagger.gen.go")
+    Asserts.added(depChanges, "dep/dagger.gen.go")
+
+    let merged = changeset.withChangesets([aChanges, bChanges, depChanges])
+
+    Asserts.paths(
+      merged.addedPaths,
+      aChanges.addedPaths + bChanges.addedPaths + depChanges.addedPaths,
+      "merged added paths are not the union of the parts",
+    )
+    Asserts.paths(
+      merged.modifiedPaths,
+      aChanges.modifiedPaths + bChanges.modifiedPaths + depChanges.modifiedPaths,
+      "merged modified paths are not the union of the parts",
+    )
+    Asserts.paths(
+      merged.removedPaths,
+      aChanges.removedPaths + bChanges.removedPaths + depChanges.removedPaths,
+      "merged removed paths are not the union of the parts",
+    )
 
     null
   }
