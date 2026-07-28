@@ -72,8 +72,13 @@ type PolyfillModuleSource {
   """
   Generate files for this module source, and return the staged changes.
 
-  Paths are workspace-root-relative, matching how the module source is
-  addressed rather than where the caller happens to be standing.
+  Paths are relative to the caller cwd, matching how a returned changeset is
+  applied.
+
+  The engine diffs the generated context against the same base it generated
+  from, so the changeset only ever carries this module's own generated files,
+  never staged dependency codegen. Sibling modules' changesets therefore stay
+  disjoint and merge cleanly without any module-path scoping here.
   """
   generate: Changeset! {
     let generated = core.generatedContextChangeset
