@@ -232,16 +232,7 @@ type PolyfillWorkspaceCwd {
   Return the current workspace directory path relative to the workspace root.
   """
   let path(ws: Workspace!): String! {
-    # Newer engines do not expose Workspace.path. Searching for "." from "."
-    # returns the current workspace directory as a workspace-root-relative path.
-    let path = ws.findUp(name: ".", from: ".")
-
-    if (path == null) {
-      "."
-    } else if (path == "/") {
-      "."
-    } else {
-      path.trimPrefix("/")
-    }
+    let path = ws.cwd
+    if (path == "/") { "." } else { path.trimPrefix("/") }
   }
 }
