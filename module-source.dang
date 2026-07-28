@@ -90,6 +90,16 @@ type PolyfillModuleSource {
     if (cwd == ".") {
       generated
     } else {
+      # A cwd-relative changeset cannot express paths outside the cwd — e.g. a
+      # module discovered above it — and re-rooting would silently drop them,
+      # leaving the module never regenerated. Fail loudly until there is a
+      # policy for such modules.
+      let outside = (generated.addedPaths + generated.modifiedPaths + generated.removedPaths)
+        .filter { p => p != cwd and p.hasPrefix(cwd + "/") == false }
+      if (outside.length > 0) {
+        raise "generated changes fall outside the current directory " + cwd + ": " + outside.join(", ")
+      }
+
       generated.after.directory(cwd).changes(generated.before.directory(cwd))
     }
   }
