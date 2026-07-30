@@ -31,6 +31,39 @@ type Asserts {
   }
 
   """
+  Return every path a changeset touches.
+  """
+  let changedPaths(changes: Changeset!): [String!]! {
+    changes.addedPaths + changes.modifiedPaths + changes.removedPaths
+  }
+
+  """
+  Assert that every path a changeset touches lies within a directory.
+  """
+  let allWithin(changes: Changeset!, dir: String!, context: String!): Void {
+    changedPaths(changes).each { path =>
+      assert(
+        path == dir or path.hasPrefix(dir + "/"),
+        context + ": path leaked outside " + dir + ": " + path,
+      )
+    }
+    null
+  }
+
+  """
+  Assert that no path a changeset touches lies within a directory.
+  """
+  let noneWithin(changes: Changeset!, dir: String!, context: String!): Void {
+    changedPaths(changes).each { path =>
+      assert(
+        (path == dir or path.hasPrefix(dir + "/")) == false,
+        context + ": unexpected path under " + dir + ": " + path,
+      )
+    }
+    null
+  }
+
+  """
   Assert that a changeset added a path.
   """
   let added(changes: Changeset!, path: String!): Void {

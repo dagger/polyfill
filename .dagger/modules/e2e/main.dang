@@ -11,28 +11,28 @@ type E2E {
   """
   Checks for workspace projection and fork edits.
   """
-  pub workspace: WorkspaceChecks! {
-    WorkspaceChecks()
+  workspace: WorkspaceChecks! {
+    WorkspaceChecks
   }
 
   """
   Checks for config directory discovery.
   """
-  pub findConfigDirs: FindConfigDirsChecks! {
-    FindConfigDirsChecks()
+  findConfigDirs: FindConfigDirsChecks! {
+    FindConfigDirsChecks
   }
 
   """
   Checks for module config reads and edits.
   """
-  pub moduleConfig: ModuleConfigChecks! {
-    ModuleConfigChecks()
+  moduleConfig: ModuleConfigChecks! {
+    ModuleConfigChecks
   }
 
   """
   Checks for module source generation.
   """
-  pub moduleSource: ModuleSourceChecks! {
-    ModuleSourceChecks()
+  moduleSource: ModuleSourceChecks! {
+    ModuleSourceChecks
   }
 }

@@ -11,14 +11,14 @@ type PolyfillModuleConfig {
   """
   The Dagger module name declared in dagger.json.
   """
-  pub name: String! {
+  name: String! {
     configJSON.field(["name"]).asString
   }
 
   """
   Return dependency names when present, otherwise dependency sources.
   """
-  pub dependencies: [String!]! {
+  dependencies: [String!]! {
     dependencyFragments
       .map { dependency => dependencyName(dependency) }
       .filter { dependency => dependency != "" }
@@ -27,18 +27,18 @@ type PolyfillModuleConfig {
   """
   The Dagger engine version required by this module, without a leading "v".
   """
-  pub requiredEngineVersion: String! {
+  requiredEngineVersion: String! {
     configJSON.field(["engineVersion"]).asString.trimPrefix("v")
   }
 
   """
   Return this module config with one dependency appended.
   """
-  pub withDependency(source: String!, name: String! = ""): PolyfillModuleConfig! {
+  withDependency(source: String!, name: String! = ""): PolyfillModuleConfig! {
     let dependency = if (name == "") {
-      toString(toJSON(source))
+      toString(JSON.encode(source))
     } else {
-      toString(toJSON({{name: name, source: source}}))
+      toString(JSON.encode({{name, source}}))
     }
     withContents(withDependencyFragments(dependencyFragments + [dependency]))
   }
@@ -46,7 +46,7 @@ type PolyfillModuleConfig {
   """
   Return this module config with dependencies matching the given name or source removed.
   """
-  pub withoutDependency(name: String!): PolyfillModuleConfig! {
+  withoutDependency(name: String!): PolyfillModuleConfig! {
     withContents(withDependencyFragments(
       dependencyFragments.filter { dependency =>
         dependencyName(dependency) != name and dependencySource(dependency) != name
@@ -57,7 +57,7 @@ type PolyfillModuleConfig {
   """
   Return this module config after updating one dependency, or all remote dependencies.
   """
-  pub withUpdatedDependencies(name: String! = ""): PolyfillModuleConfig! {
+  withUpdatedDependencies(name: String! = ""): PolyfillModuleConfig! {
     let updates = if (name == "") { [] } else { [name] }
     let updatedRemote = updatedRemoteDependencyFragments(updates)
 
@@ -77,28 +77,28 @@ type PolyfillModuleConfig {
   """
   Return this module config with the given required Dagger engine version.
   """
-  pub withRequiredEngineVersion(version: String!): PolyfillModuleConfig! {
+  withRequiredEngineVersion(version: String!): PolyfillModuleConfig! {
     withContents(withField(["engineVersion"], normalizedVersion(version)))
   }
 
   """
   Return this module config with the current Dagger engine version.
   """
-  pub withCurrentEngineVersion: PolyfillModuleConfig! {
+  withCurrentEngineVersion: PolyfillModuleConfig! {
     withRequiredEngineVersion(version)
   }
 
   """
   Return this module config with the latest stable Dagger engine version.
   """
-  pub withLatestEngineVersion: PolyfillModuleConfig! {
+  withLatestEngineVersion: PolyfillModuleConfig! {
     withRequiredEngineVersion("latest")
   }
 
   """
   Return a workspace fork containing this module config's staged dagger.json change.
   """
-  pub fork: PolyfillWorkspaceFork! {
+  fork: PolyfillWorkspaceFork! {
     if (contents == originalContents) {
       PolyfillWorkspaceFork(
         ws: ws,
@@ -138,7 +138,7 @@ type PolyfillModuleConfig {
   }
 
   let wsID: String! {
-    toJSON(ws.id)
+    JSON.encode(ws.id)
   }
 
   """
@@ -190,7 +190,7 @@ type PolyfillModuleConfig {
         []
       } else {
         dependencies
-          .asArray.{contents}
+          .asArray.{{contents}}
           .map { dependency => toString(dependency.contents) }
       }
     } else {
@@ -209,7 +209,7 @@ type PolyfillModuleConfig {
   Return the dependency's configured name, or its source if no name is set.
   """
   let dependencyName(dependency: String!): String! {
-    let value = json.withContents(dependency :: JSON!)
+    let value = json.withContents(dependency :: Dagger.JSON!)
     if (isJSONString(dependency)) {
       value.asString
     } else if (value.fields.contains("name") == true) {
@@ -225,7 +225,7 @@ type PolyfillModuleConfig {
   Return the dependency source.
   """
   let dependencySource(dependency: String!): String! {
-    let value = json.withContents(dependency :: JSON!)
+    let value = json.withContents(dependency :: Dagger.JSON!)
     if (isJSONString(dependency)) {
       value.asString
     } else if (value.fields.contains("source") == true) {
@@ -239,7 +239,7 @@ type PolyfillModuleConfig {
   Return the dependency pin, if one is configured.
   """
   let dependencyPin(dependency: String!): String! {
-    let value = json.withContents(dependency :: JSON!)
+    let value = json.withContents(dependency :: Dagger.JSON!)
     if (isJSONString(dependency)) {
       ""
     } else if (value.fields.contains("pin") == true) {
@@ -274,7 +274,7 @@ type PolyfillModuleConfig {
   let withDependencyFragments(dependencies: [String!]!): String! {
     let updated = configJSON.withField(
       ["dependencies"],
-      json.withContents(("[" + dependencies.join(",") + "]") :: JSON!),
+      json.withContents(("[" + dependencies.join(",") + "]") :: Dagger.JSON!),
     )
     renderedConfig(updated)
   }
@@ -286,7 +286,7 @@ type PolyfillModuleConfig {
     renderedConfig(
       configJSON.withField(
         path,
-        json.withContents(toJSON(value) :: JSON!),
+        json.withContents(JSON.encode(value) :: Dagger.JSON!),
       ),
     )
   }
@@ -302,16 +302,16 @@ type PolyfillModuleConfig {
   Return rendered JSON as plain file contents.
   """
   let jsonContentsString(value: JSONValue!): String! {
-    # JSONValue.contents is a JSON scalar. toString encodes it as a JSON string
-    # literal, so decode once before passing it to file APIs that need String.
-    json.withContents(toString(value.contents(pretty: true)) :: JSON!).asString
+    # JSONValue.contents is a JSON scalar, and toString returns custom scalars
+    # bare, so this is already the raw contents that file APIs want.
+    toString(value.contents(pretty: true))
   }
 
   """
   Return the current dagger.json contents as JSON.
   """
   let configJSON: JSONValue! {
-    json.withContents(contents :: JSON!)
+    json.withContents(contents :: Dagger.JSON!)
   }
 
   """
@@ -336,7 +336,7 @@ type PolyfillModuleConfig {
     PolyfillModuleConfigUpdate
       .updatedRemoteDependencies(wsID, path, contents, updates)
       .asJSON
-      .asArray.{contents}
+      .asArray.{{contents}}
       .map { dependency => toString(dependency.contents) }
   }
 }
@@ -364,7 +364,7 @@ type PolyfillModuleConfigUpdate {
       .withExec(["go", "build", "-o", "/usr/local/bin/module-config-update-dependencies", "."])
       .withEnvVariable("WORKSPACE_ID", wsID)
       .withEnvVariable("MODULE_CONFIG_CONTENTS", contents)
-      .withEnvVariable("MODULE_CONFIG_UPDATES_JSON", toJSON(updates))
+      .withEnvVariable("MODULE_CONFIG_UPDATES_JSON", JSON.encode(updates))
       .withExec(
         ["module-config-update-dependencies", "--path", path, "--out", "/dependencies.json"],
         experimentalPrivilegedNesting: true,
